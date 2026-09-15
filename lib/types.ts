@@ -6,6 +6,8 @@ export type Team = {
   score?: number;
   record?: string;
   accent?: string;
+  logo?: string;
+  color?: string;
 };
 
 export type Game = {
@@ -25,6 +27,7 @@ export type ScoresPayload = {
   fetchedAt: string;
   source: "live" | "cache" | "demo";
   sourceUrl: string;
+  sport: string;
   stale?: boolean;
   error?: string;
 };

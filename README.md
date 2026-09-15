@@ -1,12 +1,16 @@
-# LMR Media Big 9 Football Scoreboard
+# LMR Media Big 9 Scoreboard
 
-A broadcast-ready Big 9 Conference football scoreboard designed for a Hudl production truck and deployed on Vercel.
+A broadcast-ready Big 9 Conference scoreboard for the production truck and Vercel, covering every Big 9 team sport.
+
+## Sports covered
+
+Football, boys/girls soccer, volleyball, boys/girls basketball, boys/girls hockey, wrestling, baseball, softball, and boys/girls lacrosse — 13 sports, each pulled from its own scoreboard on Minnesota-Scores.net. Select the active sport from the operator page.
 
 ## Routes
 
 - `/` — clean 16:9 browser-source output. It rotates games every 10 seconds and refreshes scores every 60 seconds.
-- `/operator` — separate production control panel for pause/resume, previous/next, manual refresh, date selection, and rotation interval.
-- `/api/scores` — server-side Minnesota-Scores.net adapter.
+- `/operator` — separate production control panel for sport selection, pause/resume, previous/next, manual refresh, date selection, and rotation interval. Controls drive the on-air board across tabs.
+- `/api/scores` — server-side Minnesota-Scores.net adapter. Query params: `sport` (see `lib/sports.ts` for ids) and `date` (`YYYY-MM-DD`).
 
 ## Run locally
 

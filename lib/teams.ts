@@ -45,3 +45,18 @@ export function shortSchoolName(value: string) {
     .replace("Mankato ", "Mankato ")
     .replace("John Marshall", "J. Marshall");
 }
+
+import schoolLogos from "./school-logos.json";
+
+type SchoolBrand = { logo: string; color: string };
+const brandBySchool = schoolLogos as Record<string, SchoolBrand>;
+
+/** Local logo path for a Big 9 school, if we have one on disk. */
+export function schoolLogo(value: string) {
+  return brandBySchool[normalizeSchool(value)]?.logo;
+}
+
+/** School accent color (hex) for a Big 9 school, if known. */
+export function schoolColor(value: string) {
+  return brandBySchool[normalizeSchool(value)]?.color;
+}
