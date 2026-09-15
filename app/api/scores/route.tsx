@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
 import { isBig9School, normalizeSchool, shortSchoolName } from "@/lib/teams";
+import { findSport, sourceUrlFor } from "@/lib/sports";
 import type { Game, GameStatus, ScoresPayload } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-const SOURCE_URL = "https://www.minnesota-scores.net/boys-sports/football/scoreboard";
 let lastGood: ScoresPayload | null = null;
 
 const sampleGames: Game[] = [
@@ -43,7 +43,7 @@ function formatSourceDate(value: string) {
   return parsed.toLocaleDateString("en-US");
 }
 
-function parseGames(html: string, requestedDate: string): Game[] {
+function parseGames(html: string, requestedDate: string, sourceUrl: string): Game[] {
   const games: Game[] = [];
   const blocks = html.match(/<(?:article|div|li|tr)[^>]+class=["'][^"']*(?:score|game|board|contest)[^"']*["'][^>]*>[\s\S]*?<\/(?:article|div|li|tr)>/gi) ?? [];
   const candidates = blocks.length ? blocks : [html];
@@ -64,28 +64,31 @@ function parseGames(html: string, requestedDate: string): Game[] {
       detail: status === "UPCOMING" ? text.match(/\d{1,2}:\d{2}\s*(?:AM|PM)?/i)?.[0] ?? "SCHEDULED" : text.match(/(?:Q[1-4]|FINAL|HALFTIME)[^|]*/i)?.[0]?.trim() ?? status,
       date: requestedDate,
       updatedAt: new Date().toISOString(),
-      sourceUrl: SOURCE_URL,
+      sourceUrl,
     });
   });
   return games;
 }
 
 export async function GET(request: Request) {
-  const date = new URL(request.url).searchParams.get("date") || new Date().toISOString().slice(0, 10);
+  const params = new URL(request.url).searchParams;
+  const date = params.get("date") || new Date().toISOString().slice(0, 10);
+  const sport = findSport(params.get("sport")).id;
   const sourceDate = formatSourceDate(date);
-  const upstream = `${SOURCE_URL}?filter-game-date=${encodeURIComponent(sourceDate)}`;
+  const sourceUrl = sourceUrlFor(findSport(sport));
+  const upstream = `${sourceUrl}?filter-game-date=${encodeURIComponent(sourceDate)}`;
   try {
     const response = await fetch(upstream, { cache: "no-store", signal: AbortSignal.timeout(8000), headers: { "User-Agent": "LMR-Media-Big9-Scoreboard/1.0" } });
     if (!response.ok) throw new Error(`Source returned ${response.status}`);
-    const games = parseGames(await response.text(), date);
+    const games = parseGames(await response.text(), date, sourceUrl);
     if (games.length) {
-      lastGood = { games, fetchedAt: new Date().toISOString(), source: "live", sourceUrl: upstream };
+      lastGood = { games, fetchedAt: new Date().toISOString(), source: "live", sourceUrl: upstream, sport };
       return NextResponse.json(lastGood, { headers: { "Cache-Control": "s-maxage=45, stale-while-revalidate=120" } });
     }
-    const empty: ScoresPayload = { games: [], fetchedAt: new Date().toISOString(), source: "live", sourceUrl: upstream };
+    const empty: ScoresPayload = { games: [], fetchedAt: new Date().toISOString(), source: "live", sourceUrl: upstream, sport };
     return NextResponse.json(empty, { headers: { "Cache-Control": "s-maxage=45, stale-while-revalidate=120" } });
   } catch (error) {
-    if (lastGood) return NextResponse.json({ ...lastGood, source: "cache", stale: true, error: "Live source temporarily unavailable" });
-    return NextResponse.json({ games: sampleGames, fetchedAt: new Date().toISOString(), source: "demo", sourceUrl: SOURCE_URL, stale: true, error: error instanceof Error ? error.message : "Live source unavailable" });
+    if (lastGood?.sport === sport) return NextResponse.json({ ...lastGood, source: "cache", stale: true, error: "Live source temporarily unavailable" });
+    return NextResponse.json({ games: sampleGames, fetchedAt: new Date().toISOString(), source: "demo", sourceUrl: upstream, stale: true, sport, error: error instanceof Error ? error.message : "Live source unavailable" });
   }
 }
