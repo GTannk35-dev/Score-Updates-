@@ -13,6 +13,21 @@ export const BIG9_SCHOOLS = [
   "Winona",
 ] as const;
 
+/**
+ * Schools whose names contain a Big 9 school's name ("Winona Cotter" contains
+ * "Winona") but are NOT Big 9 members. Substring matching must skip these.
+ */
+const NOT_BIG9_SCHOOLS = new Set([
+  "Winona Cotter",
+  "Winona State",
+  "Albert Lea Area",
+  "Austin Area",
+  "Rochester Lourdes",
+  "Rochester STEM Academy",
+  "Schaeffer Academy",
+  "Lyle/Austin Pacelli",
+]);
+
 const aliases: Record<string, string> = {
   "Albert Lea Tigers": "Albert Lea",
   "Austin Packers": "Austin",
@@ -31,6 +46,7 @@ const aliases: Record<string, string> = {
 export function normalizeSchool(value: string) {
   const clean = value.replace(/\s+/g, " ").trim();
   if (aliases[clean]) return aliases[clean];
+  if (NOT_BIG9_SCHOOLS.has(clean)) return clean;
   return BIG9_SCHOOLS.find((school) => clean.toLowerCase().includes(school.toLowerCase())) ?? clean;
 }
 

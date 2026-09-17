@@ -1,94 +1,89 @@
 import { NextResponse } from "next/server";
-import { isBig9School, normalizeSchool, shortSchoolName } from "@/lib/teams";
+import { parseScoreCards } from "@/lib/parse-scorecards";
+import { isBig9School, normalizeSchool, schoolColor, schoolLogo, shortSchoolName } from "@/lib/teams";
 import { findSport, sourceUrlFor } from "@/lib/sports";
-import type { Game, GameStatus, ScoresPayload } from "@/lib/types";
+import type { Game, ScoresPayload } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-let lastGood: ScoresPayload | null = null;
+/** Last successful non-empty payload per sport, served when the live source is unreachable. */
+const lastGood = new Map<string, ScoresPayload>();
 
 const sampleGames: Game[] = [
   { id: "sample-1", away: { name: "Mankato West", shortName: "Mankato West", score: 21, record: "3–1" }, home: { name: "Owatonna", shortName: "Owatonna", score: 28, record: "4–0" }, status: "LIVE", detail: "Q4  •  02:18", venue: "Owatonna, MN", date: "Friday, September 12", updatedAt: new Date().toISOString() },
   { id: "sample-2", away: { name: "Austin", shortName: "Austin", score: 14, record: "2–2" }, home: { name: "Rochester Mayo", shortName: "Rochester Mayo", score: 35, record: "4–0" }, status: "FINAL", detail: "FINAL", venue: "Rochester, MN", date: "Friday, September 12", updatedAt: new Date().toISOString() },
-  { id: "sample-3", away: { name: "Northfield", shortName: "Northfield", score: undefined, record: "1–2" }, home: { name: "Faribault", shortName: "Faribault", score: undefined, record: "2–1" }, status: "UPCOMING", detail: "FRI 7:00 PM", venue: "Faribault, MN", date: "Friday, September 19", updatedAt: new Date().toISOString() },
+  { id: "sample-3", away: { name: "Northfield", shortName: "Northfield", record: "1–2" }, home: { name: "Faribault", shortName: "Faribault", record: "2–1" }, status: "UPCOMING", detail: "FRI 7:00 PM", venue: "Faribault, MN", date: "Friday, September 19", updatedAt: new Date().toISOString() },
   { id: "sample-4", away: { name: "Red Wing", shortName: "Red Wing", score: 7, record: "1–3" }, home: { name: "Winona", shortName: "Winona", score: 10, record: "3–1" }, status: "HALFTIME", detail: "HALFTIME", venue: "Winona, MN", date: "Friday, September 12", updatedAt: new Date().toISOString() },
 ];
 
-function cleanText(value: string) {
-  return value
-    .replace(/<script[\s\S]*?<\/script>/gi, " ")
-    .replace(/<style[\s\S]*?<\/style>/gi, " ")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/&nbsp;/gi, " ")
-    .replace(/&amp;/gi, "&")
-    .replace(/&#39;|&apos;/gi, "'")
-    .replace(/&ndash;|&mdash;/gi, "–")
-    .replace(/\s+/g, " ")
-    .trim();
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+/** "Today" in Minnesota (America/Chicago), so evening broadcasts don't roll to tomorrow. */
+function todayInCentral(): string {
+  const parts = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Chicago" }).format(new Date());
+  return parts.slice(0, 10); // en-CA yields YYYY-MM-DD
 }
 
-function statusFromText(text: string): GameStatus {
-  const upper = text.toUpperCase();
-  if (/FINAL|F\s*\/\s*T|COMPLETED/.test(upper)) return "FINAL";
-  if (/HALFTIME|HALF TIME/.test(upper)) return "HALFTIME";
-  if (/DELAY|POSTPON/.test(upper)) return "DELAYED";
-  if (/Q[1-4]|\bLIVE\b|\d{1,2}:\d{2}/.test(upper)) return "LIVE";
-  return "UPCOMING";
+/**
+ * minnesota-scores.net takes the date as a PATH segment
+ * (/scoreboard/2026-09-15). Its ?filter-game-date= query param is ignored by
+ * the server, so a query-param URL always returns today's page.
+ */
+function scoreboardUrlFor(sportId: string, date: string): string {
+  return `${sourceUrlFor(findSport(sportId))}/${date}`;
 }
 
-function formatSourceDate(value: string) {
-  const parsed = new Date(`${value}T12:00:00`);
-  if (Number.isNaN(parsed.getTime())) return new Date().toLocaleDateString("en-US");
-  return parsed.toLocaleDateString("en-US");
-}
-
-function parseGames(html: string, requestedDate: string, sourceUrl: string): Game[] {
-  const games: Game[] = [];
-  const blocks = html.match(/<(?:article|div|li|tr)[^>]+class=["'][^"']*(?:score|game|board|contest)[^"']*["'][^>]*>[\s\S]*?<\/(?:article|div|li|tr)>/gi) ?? [];
-  const candidates = blocks.length ? blocks : [html];
-  candidates.forEach((block, index) => {
-    const text = cleanText(block);
-    const names = Array.from(new Set((text.match(/[A-Z][A-Za-z.'’ -]{2,40}/g) ?? []).map((name) => normalizeSchool(name)).filter(isBig9School)));
-    if (names.length < 1) return;
-    const teams = names.slice(0, 2);
-    if (teams.length < 2) return;
-    const scoreMatches = text.match(/\b\d{1,2}\b/g) ?? [];
-    const scores = scoreMatches.slice(-2).map(Number);
-    const status = statusFromText(text);
-    games.push({
-      id: `live-${index}-${teams.join("-")}`,
-      away: { name: teams[0], shortName: shortSchoolName(teams[0]), score: scores[0] },
-      home: { name: teams[1], shortName: shortSchoolName(teams[1]), score: scores[1] },
-      status,
-      detail: status === "UPCOMING" ? text.match(/\d{1,2}:\d{2}\s*(?:AM|PM)?/i)?.[0] ?? "SCHEDULED" : text.match(/(?:Q[1-4]|FINAL|HALFTIME)[^|]*/i)?.[0]?.trim() ?? status,
-      date: requestedDate,
-      updatedAt: new Date().toISOString(),
-      sourceUrl,
-    });
+async function fetchGamesForDate(sportId: string, date: string, now: Date): Promise<{ games: Game[]; sourceUrl: string }> {
+  const sourceUrl = scoreboardUrlFor(sportId, date);
+  const response = await fetch(sourceUrl, {
+    cache: "no-store",
+    signal: AbortSignal.timeout(7000),
+    headers: { "User-Agent": "LMR-Media-Big9-Scoreboard/1.0", Accept: "text/html" },
   });
-  return games;
+  if (!response.ok) throw new Error(`Source returned ${response.status} for ${date}`);
+  const html = await response.text();
+  const games = parseScoreCards(html, {
+    date,
+    sourceUrl,
+    isTracked: isBig9School,
+    displayName: normalizeSchool,
+    shortName: shortSchoolName,
+    logo: schoolLogo,
+    color: schoolColor,
+    now,
+  });
+  return { games, sourceUrl };
 }
 
 export async function GET(request: Request) {
   const params = new URL(request.url).searchParams;
-  const date = params.get("date") || new Date().toISOString().slice(0, 10);
   const sport = findSport(params.get("sport")).id;
-  const sourceDate = formatSourceDate(date);
-  const sourceUrl = sourceUrlFor(findSport(sport));
-  const upstream = `${sourceUrl}?filter-game-date=${encodeURIComponent(sourceDate)}`;
-  try {
-    const response = await fetch(upstream, { cache: "no-store", signal: AbortSignal.timeout(8000), headers: { "User-Agent": "LMR-Media-Big9-Scoreboard/1.0" } });
-    if (!response.ok) throw new Error(`Source returned ${response.status}`);
-    const games = parseGames(await response.text(), date, sourceUrl);
-    if (games.length) {
-      lastGood = { games, fetchedAt: new Date().toISOString(), source: "live", sourceUrl: upstream, sport };
-      return NextResponse.json(lastGood, { headers: { "Cache-Control": "s-maxage=45, stale-while-revalidate=120" } });
-    }
-    const empty: ScoresPayload = { games: [], fetchedAt: new Date().toISOString(), source: "live", sourceUrl: upstream, sport };
-    return NextResponse.json(empty, { headers: { "Cache-Control": "s-maxage=45, stale-while-revalidate=120" } });
-  } catch (error) {
-    if (lastGood?.sport === sport) return NextResponse.json({ ...lastGood, source: "cache", stale: true, error: "Live source temporarily unavailable" });
-    return NextResponse.json({ games: sampleGames, fetchedAt: new Date().toISOString(), source: "demo", sourceUrl: upstream, stale: true, sport, error: error instanceof Error ? error.message : "Live source unavailable" });
+  const now = new Date();
+  const dates = [...new Set(params.getAll("date").filter((value) => ISO_DATE_RE.test(value)))];
+  if (!dates.length) dates.push(todayInCentral());
+  dates.sort();
+
+  const results = await Promise.allSettled(dates.map((date) => fetchGamesForDate(sport, date, now)));
+  const fulfilled = results.filter((entry): entry is PromiseFulfilledResult<{ games: Game[]; sourceUrl: string }> => entry.status === "fulfilled");
+  const failed = results.length - fulfilled.length;
+  const games = fulfilled.flatMap((entry) => entry.value.games).sort((a, b) => a.date.localeCompare(b.date));
+  const sourceUrl = fulfilled[0]?.value.sourceUrl ?? scoreboardUrlFor(sport, dates[0]);
+
+  // Live data (even partial) wins; only an empty successful sweep returns [].
+  if (games.length) {
+    const payload: ScoresPayload = { games, fetchedAt: now.toISOString(), source: "live", sourceUrl, sport };
+    lastGood.set(sport, payload);
+    return NextResponse.json(failed ? { ...payload, stale: true, error: `${failed} of ${results.length} date feeds unavailable` } : payload, { headers: { "Cache-Control": "s-maxage=45, stale-while-revalidate=120" } });
   }
+  if (!failed) {
+    const empty: ScoresPayload = { games: [], fetchedAt: now.toISOString(), source: "live", sourceUrl, sport };
+    return NextResponse.json(empty, { headers: { "Cache-Control": "s-maxage=45, stale-while-revalidate=120" } });
+  }
+
+  // Every date feed failed: fall back to this sport's last good data, else the demo board.
+  const cached = lastGood.get(sport);
+  if (cached) return NextResponse.json({ ...cached, source: "cache", stale: true, error: "Live source temporarily unavailable" }, { headers: { "Cache-Control": "no-store" } });
+  const demo: ScoresPayload = { games: sampleGames, fetchedAt: now.toISOString(), source: "demo", sourceUrl, sport, stale: true, error: "Live source unavailable — showing demo scores" };
+  return NextResponse.json(demo, { headers: { "Cache-Control": "no-store" } });
 }

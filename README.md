@@ -8,9 +8,10 @@ Football, boys/girls soccer, volleyball, boys/girls basketball, boys/girls hocke
 
 ## Routes
 
-- `/` — clean 16:9 browser-source output. It rotates games every 10 seconds and refreshes scores every 60 seconds.
-- `/operator` — separate production control panel for sport selection, pause/resume, previous/next, manual refresh, date selection, and rotation interval. Controls drive the on-air board across tabs.
-- `/api/scores` — server-side Minnesota-Scores.net adapter. Query params: `sport` (see `lib/sports.ts` for ids) and `date` (`YYYY-MM-DD`).
+- `/` — clean 16:9 browser-source output. It rotates games every 10 seconds and refreshes scores every 60 seconds. The board renders on a fixed 1920×1080 stage scaled to the viewport, so every device shows an identical frame.
+- `/operator` — separate production control panel for sport selection, pause/resume, previous/next, manual refresh, calendar date selection, rotation interval, and an UP NEXT preview of the next game in rotation. Controls drive the on-air board across tabs **and across devices** (the state is mirrored through `/api/board-state`).
+- `/api/scores` — server-side Minnesota-Scores.net adapter. Query params: `sport` (see `lib/sports.ts` for ids) and `date` (`YYYY-MM-DD`, repeatable).
+- `/api/board-state` — cross-device operator state: POST publishes the current control snapshot, GET returns it for boards on other devices.
 
 ## Run locally
 
