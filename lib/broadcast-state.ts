@@ -15,6 +15,10 @@ export type BroadcastState = {
   gameIds?: string[];
   /** Monotonic counter so every message, even identical state, is delivered. */
   seq: number;
+  /** Player stat card to display on air, when selected. */
+  playerId?: string;
+  /** Whether the selected player stat card is currently fullscreen on air. */
+  showPlayerStats?: boolean;
   /** Wall-clock publish time (ms). Lets a late joiner ignore stale snapshots. */
   publishedAt?: number;
 };

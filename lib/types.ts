@@ -1,5 +1,13 @@
 export type GameStatus = "LIVE" | "FINAL" | "UPCOMING" | "HALFTIME" | "DELAYED";
 
+export type PlayerStat = {
+  id: string;
+  name: string;
+  team: string;
+  position?: string;
+  stats: Record<string, string | number>;
+};
+
 export type Team = {
   name: string;
   shortName: string;
@@ -20,6 +28,8 @@ export type Game = {
   date: string;
   updatedAt?: string;
   sourceUrl?: string;
+  /** Optional player leaders/box-score lines when the source provides them. */
+  playerStats?: PlayerStat[];
 };
 
 export type ScoresPayload = {

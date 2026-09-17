@@ -1,4 +1,4 @@
-import type { Game, GameStatus, Team } from "./types";
+import type { Game, GameStatus, PlayerStat, Team } from "./types";
 
 /**
  * Parser for minnesota-scores.net scoreboard pages.
@@ -39,6 +39,33 @@ const CARD_RE = /<!--\s*GameId:\s*(\d+)\s*-->\s*<div class="score-card">([\s\S]*
 const ROW_RE = /<tr>[\s\S]*?<\/tr>/g;
 /** Two-cell row: team name cell followed by a right-aligned score cell (may be empty). */
 const TEAM_ROW_RE = /<td[^>]*>\s*((?:(?!<\/td>)[\s\S])*?)\s*<\/td>\s*<td[^>]*class="text-right"[^>]*>\s*(\d*)\s*<\/td>/i;
+
+/**
+ * Optional player rows used by sources that attach box-score data to a card.
+ * Minnesota-Scores currently omits these rows, so an absent match simply
+ * produces no player selector in the operator UI.
+ */
+const PLAYER_ROW_RE = /<(?:tr|div)[^>]*data-player-id=["']([^"']+)["'][^>]*>([\s\S]*?)<\/(?:tr|div)>/gi;
+const DATA_STAT_RE = /data-stat(?:-name)?=["']([^"']+)["'][^>]*data-value=["']([^"']+)["']/gi;
+
+function parsePlayerStats(block: string): PlayerStat[] {
+  const players: PlayerStat[] = [];
+  for (const match of block.matchAll(PLAYER_ROW_RE)) {
+    const row = match[2];
+    const nameMatch = row.match(/data-player-name=["']([^"']+)["']/i) ?? row.match(/<(?:a|span|strong)[^>]*>([^<]+)<\/(?:a|span|strong)>/i);
+    const teamMatch = row.match(/data-team=["']([^"']+)["']/i);
+    if (!nameMatch || !teamMatch) continue;
+    const stats: Record<string, string | number> = {};
+    for (const stat of row.matchAll(DATA_STAT_RE)) {
+      const value = stat[2].trim();
+      stats[stat[1].trim()] = value !== "" && !Number.isNaN(Number(value)) ? Number(value) : value;
+    }
+    if (!Object.keys(stats).length) continue;
+    const position = row.match(/data-position=["']([^"']+)["']/i)?.[1];
+    players.push({ id: match[1], name: stripTags(nameMatch[1]), team: stripTags(teamMatch[1]), position, stats });
+  }
+  return players;
+}
 
 function stripTags(html: string) {
   return html
@@ -147,6 +174,7 @@ export function parseScoreCards(html: string, options: ScoreCardOptions): Game[]
     if (options.logo) { away.logo = options.logo(awayName); home.logo = options.logo(homeName); }
     if (options.color) { away.color = options.color(awayName); home.color = options.color(homeName); }
 
+    const playerStats = parsePlayerStats(block);
     const id = gameId ? `live-${gameId}` : `live-${options.date}-${awayName}-${homeName}`.replace(/\s+/g, "-").toLowerCase();
     if (seenIds.has(id)) continue;
     seenIds.add(id);
@@ -161,6 +189,7 @@ export function parseScoreCards(html: string, options: ScoreCardOptions): Game[]
       date: options.date,
       updatedAt: now.toISOString(),
       sourceUrl: options.sourceUrl,
+      ...(playerStats.length ? { playerStats } : {}),
     });
   }
 
