@@ -24,13 +24,15 @@ export type BoardSnapshot = {
   schools?: string[];
   /** Game ids to show; empty array = every game in the feed. */
   gameIds?: string[];
+  playerId?: string;
+  showPlayerStats?: boolean;
   /** Wall-clock publish time (ms). Lets a client ignore stale snapshots. */
   publishedAt: number;
 };
 
 const STATE_TTL_MS = 24 * 60 * 60 * 1000;
 
-const STATE_KEYS = ["sport", "dates", "paused", "stepTo", "schools", "gameIds"] as const;
+const STATE_KEYS = ["sport", "dates", "paused", "stepTo", "schools", "gameIds", "playerId", "showPlayerStats"] as const;
 export async function POST(request: Request) {
   const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
   if (!body || typeof body !== "object") return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
@@ -41,7 +43,8 @@ export async function POST(request: Request) {
     const value = body[key];
     if (value === undefined || value === null) continue;
     // Type-check each field: a malformed publish must not poison the board.
-    if (key === "sport" && typeof value === "string") typed[key] = value;
+    if ((key === "sport" || key === "playerId") && typeof value === "string") typed[key] = value;
+    else if (key === "showPlayerStats" && typeof value === "boolean") typed[key] = value;
     else if ((key === "dates" || key === "schools" || key === "gameIds") && Array.isArray(value)) typed[key] = value.map(String).slice(0, 200);
     else if ((key === "paused" || key === "stepTo") && (typeof value === "number" || typeof value === "boolean")) typed[key] = value;
   }
