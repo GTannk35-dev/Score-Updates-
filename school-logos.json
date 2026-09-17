@@ -1,0 +1,14 @@
+{
+  "Albert Lea": { "logo": "/schools/albert-lea.gif", "color": "#7b1e26" },
+  "Austin": { "logo": "/schools/austin.gif", "color": "#a81c1c" },
+  "Faribault": { "logo": "/schools/faribault.gif", "color": "#1b2f5b" },
+  "Mankato East": { "logo": "/schools/mankato-east.gif", "color": "#274b9f" },
+  "Mankato West": { "logo": "/schools/mankato-west.gif", "color": "#b02330" },
+  "Northfield": { "logo": "/schools/northfield.gif", "color": "#7a1f2b" },
+  "Owatonna": { "logo": "/schools/owatonna.gif", "color": "#163a66" },
+  "Red Wing": { "logo": "/schools/red-wing.gif", "color": "#7d2246" },
+  "Rochester Century": { "logo": "/schools/rochester-century.gif", "color": "#1f2a44" },
+  "Rochester John Marshall": { "logo": "/schools/rochester-john-marshall.gif", "color": "#24497c" },
+  "Rochester Mayo": { "logo": "/schools/rochester-mayo.gif", "color": "#1d5c34" },
+  "Winona": { "logo": "/schools/winona.gif", "color": "#1e3f66" }
+}
